@@ -202,6 +202,16 @@
       justify-content: center;
       max-width: 660px;
     }
+    .sort-bar {
+      display: flex; gap: 6px; justify-content: center;
+    }
+    .btn-sort {
+      background: #1a1f2e; border: 1px solid #252a35; border-radius: 6px;
+      color: #6a7080; font-size: 11px; font-weight: 600;
+      padding: 4px 12px; cursor: pointer; transition: all 0.12s;
+    }
+    .btn-sort:hover { background: #222840; color: #c0c8d8; }
+    .btn-sort.active { background: #1e1a08; border-color: #c8a84b; color: #c8a84b; }
     .organize-footer {
       display: flex; align-items: center; gap: 24px;
     }
@@ -987,6 +997,7 @@
   let myHoleCards = [];
   let handSlots = [[], [], []];
   let selectedCard = null;
+  let poolSort = 'rank'; // 'rank' or 'suit'
 
   // Assigning phase
   let localAssignments = [-1, -1, -1];
@@ -1315,6 +1326,30 @@
     }
     wrap.appendChild(traysEl);
 
+    // Sort buttons
+    const SUIT_ORDER = { s: 0, h: 1, d: 2, c: 3 };
+    const sortBar = document.createElement('div');
+    sortBar.className = 'sort-bar';
+    const btnRank = document.createElement('button');
+    btnRank.className = 'btn-sort' + (poolSort === 'rank' ? ' active' : '');
+    btnRank.textContent = 'By Rank';
+    btnRank.onclick = () => { poolSort = 'rank'; render(); };
+    const btnSuit = document.createElement('button');
+    btnSuit.className = 'btn-sort' + (poolSort === 'suit' ? ' active' : '');
+    btnSuit.textContent = 'By Suit';
+    btnSuit.onclick = () => { poolSort = 'suit'; render(); };
+    sortBar.appendChild(btnRank);
+    sortBar.appendChild(btnSuit);
+    wrap.appendChild(sortBar);
+
+    // Sort pool cards
+    const sortedPool = [...pool];
+    if (poolSort === 'rank') {
+      sortedPool.sort((a, b) => (RANK_VAL[b[0]] - RANK_VAL[a[0]]) || (SUIT_ORDER[a[1]] - SUIT_ORDER[b[1]]));
+    } else {
+      sortedPool.sort((a, b) => (SUIT_ORDER[a[1]] - SUIT_ORDER[b[1]]) || (RANK_VAL[b[0]] - RANK_VAL[a[0]]));
+    }
+
     // Card pool
     const poolEl = document.createElement('div');
     poolEl.className = 'card-pool';
@@ -1329,7 +1364,7 @@
         render();
       }
     });
-    for (const c of pool) {
+    for (const c of sortedPool) {
       const cel = makeCard(c);
       cel.classList.add('pool-card');
       if (c === selectedCard) cel.classList.add('selected');
