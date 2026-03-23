@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3 Flop PLO vs Bot</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0c10;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* ── Splash Screen ── */
+    .splash {
+      position: fixed; inset: 0;
+      background: #0a0c10;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.6s ease;
+    }
+    .splash.fade-out { opacity: 0; pointer-events: none; }
+    .splash-card {
+      background: #0d1017;
+      border: 1px solid #1a1f2e;
+      border-radius: 16px;
+      padding: 48px 56px;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+    .splash-emoji { font-size: 64px; line-height: 1; }
+    .splash-title { font-size: 28px; font-weight: 800; color: #c8a84b; letter-spacing: 1px; }
+    .splash-sub { font-size: 13px; color: #5a6070; letter-spacing: 0.5px; }
+    .splash-dots { display: flex; gap: 8px; margin-top: 12px; }
+    .splash-dots span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #c8a84b; opacity: 0.2;
+      animation: pulse-dot 1.2s infinite ease-in-out;
+    }
+    .splash-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .splash-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse-dot {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(1); }
+      40% { opacity: 1; transform: scale(1.3); }
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: #0d1017;
+      border-bottom: 1px solid #1a1f2e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 16px; }
+    .topbar-title { font-size: 15px; font-weight: 700; color: #c8a84b; letter-spacing: 1px; }
+    .topbar-subtitle { font-size: 11px; color: #3a4050; }
+    .score-pills { display: flex; gap: 8px; align-items: center; }
+    .score-pill {
+      background: #1a1f2e; border: 1px solid #252a35; border-radius: 20px;
+      padding: 4px 12px; font-size: 13px; font-weight: 700;
+      color: #8090a0;
+    }
+    .score-pill.winning { color: #c8a84b; border-color: #4a3a10; background: #1e1a08; }
+    .score-pill.scooped { color: #4caf50; border-color: #1a4020; background: #0a1c10; }
+    .topbar-right { display: flex; gap: 10px; }
+    .btn-top {
+      background: #1a1f2e; border: 1px solid #252a35; border-radius: 6px;
+      color: #8090a0; font-size: 12px; padding: 6px 14px; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-top:hover { background: #222840; color: #c0c8d8; }
+
+    /* ── Main area ── */
+    .main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-y: auto;
+      padding: 16px;
+      gap: 16px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      width: 55px; height: 78px;
+      border-radius: 7px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.8);
+      flex-shrink: 0;
+      transition: transform 0.12s, box-shadow 0.12s;
+    }
+    .card-sm { width: 48px; height: 68px; }
+
+    .card-face { border: 1px solid rgba(255,255,255,0.15); color: white; }
+    .card-face.suit-s { background: linear-gradient(155deg,#1a1a1a,#0a0a0a); }
+    .card-face.suit-h { background: linear-gradient(155deg,#7a1515,#4a0c0c); }
+    .card-face.suit-d { background: linear-gradient(155deg,#0e5090,#083460); }
+    .card-face.suit-c { background: linear-gradient(155deg,#166030,#0a3c1c); }
+    .card-face .rank-main { font-size: 22px; font-weight: 900; line-height: 1; letter-spacing: -1px; }
+    .card-sm .rank-main { font-size: 19px; }
+    .card-face .suit-icon { font-size: 15px; line-height: 1; opacity: 0.9; margin-top: 1px; }
+    .card-sm .suit-icon { font-size: 12px; }
+    .card-face .corner-tl {
+      position: absolute; top: 3px; left: 4px;
+      font-size: 11px; font-weight: 900; line-height: 1.1; opacity: 0.7;
+    }
+    .card-back {
+      background: linear-gradient(155deg,#1a237e,#0d1550);
+      border: 1px solid #2a3490;
+    }
+    .card-back::before {
+      content: ''; position: absolute; inset: 4px;
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 3px;
+    }
+
+    .card.selected {
+      transform: translateY(-6px);
+      box-shadow: 0 0 16px rgba(200,168,75,0.7), 0 3px 8px rgba(0,0,0,0.8);
+    }
+    .card.in-hand {
+      cursor: pointer;
+    }
+    .card.in-hand:hover { transform: translateY(-3px); }
+    .card.pool-card { cursor: pointer; }
+    .card.pool-card:hover { transform: translateY(-3px); }
+
+    /* ── Card slot (empty) ── */
+    .card-slot {
+      width: 55px; height: 78px;
+      border: 2px dashed rgba(200,168,75,0.25);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+    .card-slot:hover, .card-slot.target {
+      border-color: rgba(200,168,75,0.7);
+      background: rgba(200,168,75,0.06);
+    }
+    .card.dragging { opacity: 0.4; }
+    .hand-tray.drag-over {
+      border-color: rgba(200,168,75,0.6);
+      background: rgba(200,168,75,0.08);
+    }
+
+    /* ── Phase: waiting ── */
+    .waiting-box {
+      text-align: center;
+      display: flex; flex-direction: column; gap: 20px; align-items: center;
+    }
+    .waiting-title { font-size: 28px; font-weight: 800; color: #c8a84b; }
+    .waiting-sub { font-size: 14px; color: #5a6070; max-width: 440px; line-height: 1.6; }
+    .btn-big {
+      background: linear-gradient(135deg,#c8a84b,#806030);
+      border: none; border-radius: 10px;
+      color: #0a0c10; font-size: 16px; font-weight: 800;
+      padding: 14px 40px; cursor: pointer; letter-spacing: 0.5px;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .btn-big:hover { opacity: 0.9; transform: translateY(-2px); }
+    .btn-big:disabled { opacity: 0.35; cursor: default; transform: none; }
+
+    /* ── Phase: organizing ── */
+    .organize-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 20px;
+      width: 100%;
+    }
+    .organize-label {
+      font-size: 13px; color: #8090a0; text-transform: uppercase; letter-spacing: 1.5px;
+    }
+    .hand-trays {
+      display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;
+    }
+    .hand-tray {
+      background: rgba(10,14,22,0.7);
+      border: 1px solid #252a35;
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .hand-tray.complete { border-color: rgba(200,168,75,0.4); }
+    .hand-tray-label { font-size: 11px; color: #5a6070; text-transform: uppercase; letter-spacing: 1px; }
+    .hand-tray-cards { display: flex; gap: 6px; }
+
+    .card-pool {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      justify-content: center;
+      max-width: 660px;
+    }
+    .organize-footer {
+      display: flex; align-items: center; gap: 24px;
+    }
+    .opp-status { font-size: 12px; color: #5a6070; }
+    .opp-status.ready { color: #4caf50; }
+    .btn-secondary {
+      background: #1a1f2e; border: 1px solid #252a35; border-radius: 8px;
+      color: #8090a0; font-size: 13px; font-weight: 600;
+      padding: 9px 20px; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-secondary:hover { background: #222840; color: #c0c8d8; }
+
+    /* Submitted hands (read-only) */
+    .submitted-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 20px;
+    }
+    .waiting-msg {
+      font-size: 14px; color: #c8a84b;
+      background: rgba(200,168,75,0.08); border: 1px solid rgba(200,168,75,0.2);
+      border-radius: 8px; padding: 10px 24px;
+    }
+    .hands-preview { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+    .hand-preview {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+    .hand-preview-label { font-size: 11px; color: #4a5060; text-transform: uppercase; letter-spacing: 1px; }
+    .hand-preview-cards { display: flex; gap: 5px; }
+
+    /* ── Phase: assigning ── */
+    .assign-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 20px;
+      width: 100%;
+    }
+    .flop-row {
+      display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;
+    }
+    .flop-panel {
+      background: rgba(10,14,22,0.7);
+      border: 1px solid #252a35;
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      min-width: 170px;
+    }
+    .flop-panel.assigned-here { border-color: rgba(200,168,75,0.5); background: rgba(200,168,75,0.04); }
+    .flop-label { font-size: 11px; color: #5a6070; text-transform: uppercase; letter-spacing: 1px; }
+    .flop-cards { display: flex; gap: 5px; }
+    .flop-assigned { font-size: 11px; color: #c8a84b; min-height: 16px; }
+
+    .assign-hands { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 700px; }
+    .assign-hand-row {
+      background: rgba(10,14,22,0.5);
+      border: 1px solid #252a35;
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex; align-items: center; gap: 14px;
+      flex-wrap: wrap;
+    }
+    .assign-hand-row.assigned { border-color: rgba(200,168,75,0.3); }
+    .assign-hand-label { font-size: 11px; color: #5a6070; text-transform: uppercase; letter-spacing: 1px; min-width: 52px; }
+    .assign-hand-cards { display: flex; gap: 5px; flex: 1; }
+    .assign-btns { display: flex; gap: 6px; }
+    .btn-board {
+      background: #1a1f2e; border: 1px solid #252a35; border-radius: 6px;
+      color: #8090a0; font-size: 12px; font-weight: 600;
+      padding: 5px 10px; cursor: pointer; transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .btn-board:hover { background: #252d45; color: #c8a84b; border-color: #4a3a10; }
+    .btn-board.active { background: #1e1a08; border-color: #c8a84b; color: #c8a84b; }
+    .btn-board:disabled { opacity: 0.25; cursor: default; }
+
+    /* ── Phase: revealed / ended ── */
+    .boards-row {
+      display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+      width: 100%;
+    }
+    .board-panel {
+      background: rgba(10,14,22,0.8);
+      border: 1px solid #252a35;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      min-width: 220px;
+      flex: 1; max-width: 300px;
+    }
+    .board-panel.won  { border-color: rgba(76,175,80,0.5); background: rgba(76,175,80,0.04); }
+    .board-panel.lost { border-color: rgba(244,67,54,0.3); }
+    .board-panel.tied { border-color: rgba(100,120,160,0.4); }
+
+    .bp-label { font-size: 11px; color: #5a6070; text-transform: uppercase; letter-spacing: 1.5px; }
+    .bp-board-cards { display: flex; gap: 5px; min-height: 68px; align-items: center; }
+    .board-placeholder-sm {
+      width: 48px; height: 68px;
+      border: 1px dashed rgba(255,255,255,0.07); border-radius: 5px;
+    }
+
+    /* Equity bar */
+    .equity-wrap { width: 100%; display: flex; flex-direction: column; gap: 4px; }
+    .equity-bar {
+      width: 100%; height: 20px;
+      background: #0d1017; border-radius: 10px;
+      overflow: hidden; display: flex;
+    }
+    .equity-p1 {
+      background: linear-gradient(90deg, #1e6b1e, #4caf50);
+      height: 100%; transition: width 0.5s;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.9);
+      min-width: 24px;
+      white-space: nowrap; overflow: hidden;
+    }
+    .equity-p2 {
+      background: linear-gradient(90deg, #8b1a1a, #c02828);
+      height: 100%; transition: width 0.5s;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.9);
+      min-width: 24px;
+      white-space: nowrap; overflow: hidden;
+    }
+    .equity-labels {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: #6a7080;
+    }
+
+    /* Per-player hand in board panel */
+    .bp-player {
+      width: 100%;
+      background: rgba(255,255,255,0.02);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .bp-player-label {
+      font-size: 10px; color: #5a6070; display: flex; justify-content: space-between;
+    }
+    .bp-player-label .hand-name { color: #8090a0; font-style: italic; }
+    .bp-player-cards { display: flex; gap: 4px; }
+
+    /* Result badge */
+    .result-badge {
+      font-size: 13px; font-weight: 800; padding: 4px 16px;
+      border-radius: 20px; text-align: center;
+    }
+    .result-badge.win  { background: rgba(76,175,80,0.15); color: #4caf50; }
+    .result-badge.lose { background: rgba(244,67,54,0.1); color: #f44336; }
+    .result-badge.tie  { background: rgba(100,120,160,0.1); color: #8090a0; }
+
+    .btn-run {
+      background: linear-gradient(135deg,#c8a84b,#806030);
+      border: none; border-radius: 8px;
+      color: #0a0c10; font-size: 13px; font-weight: 800;
+      padding: 10px 20px; cursor: pointer; letter-spacing: 0.5px;
+      transition: opacity 0.15s, transform 0.15s;
+      width: 100%;
+    }
+    .btn-run:hover { opacity: 0.88; transform: translateY(-1px); }
+
+    /* Ended overlay extras */
+    .ended-summary {
+      text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center;
+    }
+    .ended-title { font-size: 20px; font-weight: 800; color: #c8a84b; }
+    .scoop-badge {
+      background: rgba(76,175,80,0.15); border: 1px solid rgba(76,175,80,0.3);
+      border-radius: 8px; padding: 5px 16px;
+      font-size: 14px; font-weight: 700; color: #4caf50;
+    }
+
+    .status-bar {
+      background: #0d1017;
+      border-top: 1px solid #1a1f2e;
+      padding: 8px 20px;
+      font-size: 12px; color: #5a6070;
+      text-align: center; flex-shrink: 0;
+    }
+    .status-bar.highlight { color: #c8a84b; }
+  </style>
+</head>
+<body>
+
+  <!-- Splash Screen -->
+  <div class="splash" id="splash">
+    <div class="splash-card">
+      <div class="splash-emoji">&#127183;</div>
+      <div class="splash-title">3 Flop PLO</div>
+      <div class="splash-sub">vs Bot &middot; 3 boards &middot; 3 hands</div>
+      <div class="splash-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div>
+        <div class="topbar-title">&#9824; 3 Flop PLO &mdash; Bot</div>
+        <div class="topbar-subtitle">vs Bot &middot; 3 boards &middot; 3 hands</div>
+      </div>
+      <div class="score-pills" id="scorePills"></div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-top" id="btnReset">Reset Scores</button>
+    </div>
+  </div>
+
+  <!-- Main area -->
+  <div class="main-area" id="mainArea">
+    <div style="color:#5a6070;font-size:13px">Loading&hellip;</div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar" id="statusBar">Ready</div>
+
+  <script>
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PLO HAND EVALUATOR (inlined from plo-eval.js)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const RANK_VALUES = {
+    '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+    'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14
+  };
+
+  const RANK_SYMBOLS = {
+    14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: 'T',
+    9: '9', 8: '8', 7: '7', 6: '6', 5: '5', 4: '4', 3: '3', 2: '2'
+  };
+
+  function parseCard(str) {
+    return { rank: str[0], value: RANK_VALUES[str[0]], suit: str[1], str };
+  }
+
+  function combinations(arr, k) {
+    if (k === 0) return [[]];
+    if (arr.length < k) return [];
+    const [first, ...rest] = arr;
+    return [
+      ...combinations(rest, k - 1).map(c => [first, ...c]),
+      ...combinations(rest, k)
+    ];
+  }
+
+  function encodeBase15(vals) {
+    let s = 0;
+    for (const v of vals) s = s * 15 + v;
+    return s;
+  }
+
+  function evaluate5Card(cards) {
+    const parsed = cards.map(c => typeof c === 'string' ? parseCard(c) : c);
+    const vals = parsed.map(c => c.value).sort((a, b) => b - a);
+    const suits = parsed.map(c => c.suit);
+
+    const isFlush = suits.every(s => s === suits[0]);
+
+    const unique = [...new Set(vals)].sort((a, b) => b - a);
+    let isStraight = false;
+    let straightHigh = vals[0];
+    if (unique.length === 5) {
+      if (unique[0] - unique[4] === 4) {
+        isStraight = true;
+        straightHigh = unique[0];
+      }
+      if (unique[0] === 14 && unique[1] === 5 && unique[2] === 4 && unique[3] === 3 && unique[4] === 2) {
+        isStraight = true;
+        straightHigh = 5;
+      }
+    }
+
+    const counts = {};
+    vals.forEach(v => counts[v] = (counts[v] || 0) + 1);
+    const groups = Object.entries(counts)
+      .map(([v, c]) => ({ v: +v, c }))
+      .sort((a, b) => b.c - a.c || b.v - a.v);
+
+    if (isFlush && isStraight) {
+      return straightHigh === 14 ? 9_000_000 : 8_000_000 + straightHigh;
+    }
+    if (groups[0].c === 4) {
+      return 7_000_000 + groups[0].v * 15 + groups[1].v;
+    }
+    if (groups[0].c === 3 && groups[1].c === 2) {
+      return 6_000_000 + groups[0].v * 15 + groups[1].v;
+    }
+    if (isFlush) {
+      return 5_000_000 + encodeBase15(vals);
+    }
+    if (isStraight) {
+      return 4_000_000 + straightHigh;
+    }
+    if (groups[0].c === 3) {
+      const kickers = vals.filter(v => v !== groups[0].v);
+      return 3_000_000 + groups[0].v * 225 + encodeBase15(kickers);
+    }
+    if (groups[0].c === 2 && groups[1].c === 2) {
+      const hi = Math.max(groups[0].v, groups[1].v);
+      const lo = Math.min(groups[0].v, groups[1].v);
+      return 2_000_000 + hi * 225 + lo * 15 + groups[2].v;
+    }
+    if (groups[0].c === 2) {
+      const kickers = vals.filter(v => v !== groups[0].v);
+      return 1_000_000 + groups[0].v * 3375 + encodeBase15(kickers);
+    }
+    return encodeBase15(vals);
+  }
+
+  function getHandName(score) {
+    if (score >= 9_000_000) return 'Royal Flush';
+    if (score >= 8_000_000) return 'Straight Flush';
+    if (score >= 7_000_000) return 'Four of a Kind';
+    if (score >= 6_000_000) return 'Full House';
+    if (score >= 5_000_000) return 'Flush';
+    if (score >= 4_000_000) return 'Straight';
+    if (score >= 3_000_000) return 'Three of a Kind';
+    if (score >= 2_000_000) return 'Two Pair';
+    if (score >= 1_000_000) return 'Pair';
+    return 'High Card';
+  }
+
+  function evaluatePLOHand(holeCards, boardCards) {
+    const hole = holeCards.map(c => typeof c === 'string' ? parseCard(c) : c);
+    const board = boardCards.map(c => typeof c === 'string' ? parseCard(c) : c);
+
+    const holeCombos = combinations(hole, 2);
+    const boardCombos = combinations(board, 3);
+
+    let bestScore = -1;
+    let bestHand = null;
+
+    for (const h2 of holeCombos) {
+      for (const b3 of boardCombos) {
+        const hand5 = [...h2, ...b3];
+        const score = evaluate5Card(hand5);
+        if (score > bestScore) {
+          bestScore = score;
+          bestHand = hand5;
+        }
+      }
+    }
+
+    return {
+      score: bestScore,
+      hand: bestHand ? bestHand.map(c => c.str || c) : null,
+      handName: getHandName(bestScore)
+    };
+  }
+
+  function compareHands(hole1, hole2, board) {
+    const r1 = evaluatePLOHand(hole1, board);
+    const r2 = evaluatePLOHand(hole2, board);
+    if (r1.score > r2.score) return { winner: 'p1', r1, r2 };
+    if (r2.score > r1.score) return { winner: 'p2', r1, r2 };
+    return { winner: 'tie', r1, r2 };
+  }
+
+  function buildDeck() {
+    const ranks = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+    const suits = ['c','d','h','s'];
+    const deck = [];
+    for (const r of ranks) for (const s of suits) deck.push(r + s);
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+  }
+
+  function buildDeck52() {
+    const ranks = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+    const suits = ['c','d','h','s'];
+    const d = [];
+    for (const r of ranks) for (const s of suits) d.push(r + s);
+    return d;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // BOT STRATEGY
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const RANK_VAL = { '2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'T':10,'J':11,'Q':12,'K':13,'A':14 };
+
+  function scoreHandQuality(cards) {
+    const vals = cards.map(c => RANK_VAL[c[0]]).sort((a, b) => b - a);
+    const suits = cards.map(c => c[1]);
+    let score = 0;
+
+    score += vals.reduce((s, v) => s + v, 0);
+
+    for (let i = 0; i < 4; i++)
+      for (let j = i + 1; j < 4; j++)
+        if (vals[i] === vals[j]) score += vals[i] * 3;
+
+    const uv = [...new Set(vals)].sort((a, b) => b - a);
+    for (let i = 0; i < uv.length - 1; i++) {
+      const gap = uv[i] - uv[i + 1];
+      if (gap === 1) score += 8;
+      else if (gap === 2) score += 4;
+      else if (gap === 3) score += 2;
+    }
+
+    const sc = {};
+    suits.forEach(s => sc[s] = (sc[s] || 0) + 1);
+    const suitedPairs = Object.values(sc).filter(v => v >= 2).length;
+    if (suitedPairs >= 2) score += 20;
+    else if (suitedPairs === 1) score += 10;
+
+    return score;
+  }
+
+  function allSplits(cards) {
+    const rest1 = cards.slice(1);
+    const splits = [];
+    for (const pick3 of combinations(rest1, 3)) {
+      const h1 = [cards[0], ...pick3];
+      const remaining8 = rest1.filter(c => !pick3.includes(c));
+      const rest2 = remaining8.slice(1);
+      for (const pick3b of combinations(rest2, 3)) {
+        const h2 = [remaining8[0], ...pick3b];
+        const h3 = rest2.filter(c => !pick3b.includes(c));
+        splits.push([h1, h2, h3]);
+      }
+    }
+    return splits;
+  }
+
+  function botOrganize(cards) {
+    const splits = allSplits(cards);
+    let bestScore = -Infinity;
+    let bestSplit = null;
+    for (const split of splits) {
+      const total = split.reduce((s, h) => s + scoreHandQuality(h), 0);
+      if (total > bestScore) {
+        bestScore = total;
+        bestSplit = split;
+      }
+    }
+    return bestSplit;
+  }
+
+  function handBoardAffinity(hand, flop, deadCards) {
+    const ALL_CARDS = buildDeck52();
+    const used = new Set([...hand, ...flop, ...(deadCards || [])]);
+    const available = ALL_CARDS.filter(c => !used.has(c));
+    const SIMS = 200;
+    let totalScore = 0;
+
+    for (let i = 0; i < SIMS; i++) {
+      const a = [...available];
+      for (let j = a.length - 1; j > a.length - 3; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        [a[j], a[k]] = [a[k], a[j]];
+      }
+      const board5 = [...flop, a[a.length - 1], a[a.length - 2]];
+      const r = evaluatePLOHand(hand, board5);
+      totalScore += r.score;
+    }
+
+    return totalScore / SIMS;
+  }
+
+  function botAssign(hands, boards, allDeadCards) {
+    const perms = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+    let bestScore = -Infinity;
+    let bestPerm = [0, 1, 2];
+
+    for (const perm of perms) {
+      let total = 0;
+      for (let hi = 0; hi < 3; hi++) {
+        const bi = perm[hi];
+        const flop = boards[bi].flop;
+        total += handBoardAffinity(hands[hi], flop, allDeadCards);
+      }
+      if (total > bestScore) {
+        bestScore = total;
+        bestPerm = perm;
+      }
+    }
+
+    return bestPerm;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SPLASH SCREEN
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  setTimeout(() => {
+    const splash = document.getElementById('splash');
+    splash.classList.add('fade-out');
+    setTimeout(() => splash.style.display = 'none', 600);
+  }, 3000);
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GAME STATE
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const myUsername = 'You';
+  const botName = 'Bot';
+
+  function loadScores() {
+    try {
+      const raw = localStorage.getItem('3flop_scores');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { [myUsername]: 0, [botName]: 0 };
+  }
+
+  function saveScores(scores) {
+    localStorage.setItem('3flop_scores', JSON.stringify(scores));
+  }
+
+  function freshPlayerSlot() {
+    return { holeCards: [], hands: null, assignments: null, readyOrganizing: false, readyAssigning: false };
+  }
+
+  function freshState(prevScores) {
+    return {
+      phase: 'waiting',
+      deck: [],
+      boards: [
+        { flop: [], turn: null, river: null },
+        { flop: [], turn: null, river: null },
+        { flop: [], turn: null, river: null },
+      ],
+      boardsRun: 0,
+      results: [null, null, null],
+      scoop: null,
+      players: { [myUsername]: freshPlayerSlot(), [botName]: freshPlayerSlot() },
+      scores: prevScores || loadScores(),
+      handNames: [{}, {}, {}],
+      host: myUsername,
+    };
+  }
+
+  let state = freshState();
+
+  // Organizing phase - client-side state
+  let myHoleCards = [];
+  let handSlots = [[], [], []];
+  let selectedCard = null;
+
+  // Assigning phase
+  let localAssignments = [-1, -1, -1];
+
+  // River auto-deal
+  let riverScheduled = false;
+
+  let lastRenderedPhase = null;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GAME ACTIONS (all local, no API)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  function actionStart() {
+    if (state.phase !== 'waiting' && state.phase !== 'ended') return;
+    const prevScores = state.scores;
+    const deck = buildDeck();
+
+    const p1Cards = deck.splice(0, 12);
+    const p2Cards = deck.splice(0, 12);
+
+    const boards = [
+      { flop: deck.splice(0, 3), turn: null, river: null },
+      { flop: deck.splice(0, 3), turn: null, river: null },
+      { flop: deck.splice(0, 3), turn: null, river: null },
+    ];
+
+    state = freshState(prevScores);
+    state.phase = 'organizing';
+    state.deck = deck;
+    state.boards = boards;
+    state.players[myUsername].holeCards = p1Cards;
+    state.players[botName].holeCards = p2Cards;
+
+    // Bot auto-organizes immediately
+    const botHands = botOrganize(p2Cards);
+    state.players[botName].hands = botHands;
+    state.players[botName].readyOrganizing = true;
+
+    // Init organizing
+    myHoleCards = [...p1Cards];
+    handSlots = [[], [], []];
+    selectedCard = null;
+    lastRenderedPhase = null;
+
+    render();
+  }
+
+  function actionSubmitHands() {
+    if (state.phase !== 'organizing') return;
+    if (!handSlots.every(h => h.length === 4)) return;
+
+    const hands = handSlots.map(h => [...h]);
+    const flat = hands.flat();
+    const playerSet = new Set(state.players[myUsername].holeCards);
+    if (new Set(flat).size !== 12) return;
+    if (flat.some(c => !playerSet.has(c))) return;
+
+    state.players[myUsername].hands = hands;
+    state.players[myUsername].readyOrganizing = true;
+
+    // Both ready -> move to assigning
+    if (state.players[botName].readyOrganizing) {
+      state.phase = 'assigning';
+
+      // Bot auto-assigns
+      const allDeadCards = [
+        ...state.players[myUsername].holeCards,
+        ...state.players[botName].holeCards,
+        ...state.boards.flatMap(b => b.flop),
+      ];
+      const botAssignments = botAssign(state.players[botName].hands, state.boards, allDeadCards);
+      state.players[botName].assignments = botAssignments;
+      state.players[botName].readyAssigning = true;
+
+      // Init assigning
+      localAssignments = [-1, -1, -1];
+      lastRenderedPhase = null;
+    }
+
+    render();
+  }
+
+  function actionSubmitAssignments() {
+    if (state.phase !== 'assigning') return;
+    if (!localAssignments.every(a => a >= 0)) return;
+    const sorted = [...localAssignments].sort((a, b) => a - b);
+    if (JSON.stringify(sorted) !== '[0,1,2]') return;
+
+    state.players[myUsername].assignments = [...localAssignments];
+    state.players[myUsername].readyAssigning = true;
+
+    if (state.players[botName].readyAssigning) {
+      state.phase = 'revealed';
+      lastRenderedPhase = null;
+    }
+
+    render();
+  }
+
+  function actionRunTurn() {
+    if (state.phase !== 'revealed') return;
+    const bi = state.boardsRun;
+    if (bi >= 3) return;
+    if (state.boards[bi].turn) return;
+
+    state.boards[bi].turn = state.deck.shift();
+    render();
+
+    // Auto-deal river after 2s
+    if (!riverScheduled) {
+      riverScheduled = true;
+      setTimeout(() => {
+        riverScheduled = false;
+        actionRunRiver();
+      }, 2000);
+    }
+  }
+
+  function actionRunRiver() {
+    if (state.phase !== 'revealed') return;
+    const bi = state.boardsRun;
+    if (bi >= 3) return;
+    if (!state.boards[bi].turn) return;
+    if (state.boards[bi].river) return;
+
+    const board = state.boards[bi];
+    board.river = state.deck.shift();
+
+    // Evaluate
+    const p1HandIdx = state.players[myUsername].assignments.indexOf(bi);
+    const p2HandIdx = state.players[botName].assignments.indexOf(bi);
+    const p1Hand = state.players[myUsername].hands[p1HandIdx];
+    const p2Hand = state.players[botName].hands[p2HandIdx];
+
+    const fullBoard = [...board.flop, board.turn, board.river];
+    const { winner, r1, r2 } = compareHands(p1Hand, p2Hand, fullBoard);
+
+    if (winner === 'p1') {
+      state.results[bi] = myUsername;
+      state.scores[myUsername] = (state.scores[myUsername] || 0) + 1;
+    } else if (winner === 'p2') {
+      state.results[bi] = botName;
+      state.scores[botName] = (state.scores[botName] || 0) + 1;
+    } else {
+      state.results[bi] = 'tie';
+    }
+
+    if (!state.handNames) state.handNames = [{}, {}, {}];
+    state.handNames[bi][myUsername] = r1.handName;
+    state.handNames[bi][botName] = r2.handName;
+
+    state.boardsRun++;
+
+    if (state.boardsRun === 3) {
+      const p1Wins = state.results.filter(r => r === myUsername).length;
+      const p2Wins = state.results.filter(r => r === botName).length;
+      if (p1Wins === 3) { state.scores[myUsername] = (state.scores[myUsername] || 0) + 1; state.scoop = myUsername; }
+      else if (p2Wins === 3) { state.scores[botName] = (state.scores[botName] || 0) + 1; state.scoop = botName; }
+      state.phase = 'ended';
+      saveScores(state.scores);
+    }
+
+    render();
+  }
+
+  function actionReset() {
+    if (!confirm('Reset scores? Current game will also be cleared.')) return;
+    localStorage.removeItem('3flop_scores');
+    state = freshState({ [myUsername]: 0, [botName]: 0 });
+    lastRenderedPhase = null;
+    render();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // RENDERING
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const SUIT_SYM = { s: '\u2660', h: '\u2665', d: '\u2666', c: '\u2663' };
+
+  function makeCard(str, small) {
+    const el = document.createElement('div');
+    el.className = 'card' + (small ? ' card-sm' : '');
+    if (!str || str === 'back') { el.classList.add('card-back'); return el; }
+    const rank = str[0], suit = str[1];
+    const sym = SUIT_SYM[suit] || suit;
+    const dr = rank === 'T' ? '10' : rank;
+    el.classList.add('card-face', `suit-${suit}`);
+    el.innerHTML = `<div class="corner-tl">${dr}<br>${sym}</div>
+      <div class="rank-main">${dr}</div><div class="suit-icon">${sym}</div>`;
+    return el;
+  }
+
+  function render() {
+    renderScores();
+    renderPhase();
+  }
+
+  function renderScores() {
+    const el = document.getElementById('scorePills');
+    const scores = state.scores || {};
+    const players = Object.keys(scores);
+    el.innerHTML = '';
+    const maxScore = Math.max(...players.map(p => scores[p] || 0), 0);
+    for (const p of players) {
+      const s = scores[p] || 0;
+      const pill = document.createElement('div');
+      pill.className = 'score-pill' + (s > 0 && s === maxScore ? (state.scoop === p ? ' scooped' : ' winning') : '');
+      pill.textContent = `${p}: ${s}`;
+      el.appendChild(pill);
+    }
+  }
+
+  function renderPhase() {
+    const phase = state.phase;
+    const area = document.getElementById('mainArea');
+    const status = document.getElementById('statusBar');
+
+    if (phase === 'waiting')    return renderWaiting(area, status);
+    if (phase === 'organizing') return renderOrganizing(area, status);
+    if (phase === 'assigning')  return renderAssigning(area, status);
+    if (phase === 'revealed' || phase === 'ended') return renderRevealed(area, status);
+  }
+
+  // ── Phase: waiting ──
+  function renderWaiting(area, status) {
+    if (area.dataset.phase === 'waiting') return;
+    area.dataset.phase = 'waiting';
+    area.innerHTML = `
+      <div class="waiting-box">
+        <div class="waiting-title">3 Flop PLO</div>
+        <div class="waiting-sub">
+          Each player organises 12 cards into 3 PLO hands,
+          then assigns each hand to one of 3 shared flops.
+          Win a flop = 1 pt &middot; Scoop all 3 = 4 pts.
+        </div>
+        <button class="btn-big" id="btnStart">Deal Cards</button>
+      </div>`;
+    document.getElementById('btnStart').onclick = () => actionStart();
+    status.className = 'status-bar';
+    status.textContent = 'Click Deal Cards to begin';
+  }
+
+  // ── Phase: organizing ──
+  function renderOrganizing(area, status) {
+    area.dataset.phase = 'organizing';
+
+    // Compute pool (cards not yet in any hand slot)
+    const inHands = new Set(handSlots.flat());
+    const pool = myHoleCards.filter(c => !inHands.has(c));
+    const allPlaced = handSlots.every(h => h.length === 4);
+
+    area.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'organize-wrap';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'organize-label';
+    lbl.textContent = 'Organize your 12 cards into 3 hands of 4';
+    wrap.appendChild(lbl);
+
+    // Hand trays
+    const traysEl = document.createElement('div');
+    traysEl.className = 'hand-trays';
+    for (let hi = 0; hi < 3; hi++) {
+      const tray = document.createElement('div');
+      tray.className = 'hand-tray' + (handSlots[hi].length === 4 ? ' complete' : '');
+      const tlbl = document.createElement('div');
+      tlbl.className = 'hand-tray-label';
+      tlbl.textContent = `Hand ${hi + 1}`;
+      tray.appendChild(tlbl);
+
+      const cardsRow = document.createElement('div');
+      cardsRow.className = 'hand-tray-cards';
+
+      for (let si = 0; si < 4; si++) {
+        const card = handSlots[hi][si];
+        if (card) {
+          const cel = makeCard(card);
+          cel.classList.add('in-hand');
+          cel.title = 'Click to remove';
+          cel.onclick = () => { removeFromHand(hi, si); };
+          cel.draggable = true;
+          cel.addEventListener('dragstart', e => {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('card', card);
+            e.dataTransfer.setData('src', `hand:${hi}:${si}`);
+            setTimeout(() => cel.classList.add('dragging'), 0);
+          });
+          cel.addEventListener('dragend', () => cel.classList.remove('dragging'));
+          cardsRow.appendChild(cel);
+        } else {
+          const slot = document.createElement('div');
+          slot.className = 'card-slot' + (selectedCard ? ' target' : '');
+          slot.onclick = () => { placeCard(hi, si); };
+          slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('target'); });
+          slot.addEventListener('dragleave', () => slot.classList.remove('target'));
+          slot.addEventListener('drop', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            slot.classList.remove('target');
+            dropOntoSlot(e, hi);
+          });
+          cardsRow.appendChild(slot);
+        }
+      }
+
+      // Tray drop target
+      tray.addEventListener('dragover', e => {
+        if (handSlots[hi].length < 4) { e.preventDefault(); tray.classList.add('drag-over'); }
+      });
+      tray.addEventListener('dragleave', e => {
+        if (!tray.contains(e.relatedTarget)) tray.classList.remove('drag-over');
+      });
+      tray.addEventListener('drop', e => {
+        tray.classList.remove('drag-over');
+        e.preventDefault();
+        dropOntoSlot(e, hi);
+      });
+
+      tray.appendChild(cardsRow);
+      traysEl.appendChild(tray);
+    }
+    wrap.appendChild(traysEl);
+
+    // Card pool
+    const poolEl = document.createElement('div');
+    poolEl.className = 'card-pool';
+    poolEl.addEventListener('dragover', e => e.preventDefault());
+    poolEl.addEventListener('drop', e => {
+      e.preventDefault();
+      const src = e.dataTransfer.getData('src');
+      if (src.startsWith('hand:')) {
+        const [, fhi, fsi] = src.split(':');
+        handSlots[+fhi].splice(+fsi, 1);
+        selectedCard = null;
+        render();
+      }
+    });
+    for (const c of pool) {
+      const cel = makeCard(c);
+      cel.classList.add('pool-card');
+      if (c === selectedCard) cel.classList.add('selected');
+      cel.onclick = () => { toggleSelect(c); };
+      cel.draggable = true;
+      cel.addEventListener('dragstart', e => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('card', c);
+        e.dataTransfer.setData('src', 'pool');
+        setTimeout(() => cel.classList.add('dragging'), 0);
+      });
+      cel.addEventListener('dragend', () => cel.classList.remove('dragging'));
+      poolEl.appendChild(cel);
+    }
+    wrap.appendChild(poolEl);
+
+    // "Assign rest" button
+    const emptyHandIdxs = handSlots.map((h, i) => h.length < 4 ? i : -1).filter(i => i >= 0);
+    if (pool.length > 0 && emptyHandIdxs.length === 1 && pool.length === 4 - handSlots[emptyHandIdxs[0]].length) {
+      const hi = emptyHandIdxs[0];
+      const assignRestBtn = document.createElement('button');
+      assignRestBtn.className = 'btn-secondary';
+      assignRestBtn.style.cssText = 'background:#1e1a08;border-color:#c8a84b;color:#c8a84b';
+      assignRestBtn.textContent = `Assign rest to Hand ${hi + 1}`;
+      assignRestBtn.onclick = () => {
+        for (const c of pool) handSlots[hi].push(c);
+        selectedCard = null;
+        render();
+      };
+      wrap.appendChild(assignRestBtn);
+    }
+
+    // Footer
+    const footer = document.createElement('div');
+    footer.className = 'organize-footer';
+
+    if (inHands.size > 0) {
+      const clrBtn = document.createElement('button');
+      clrBtn.className = 'btn-secondary';
+      clrBtn.textContent = 'Clear All';
+      clrBtn.onclick = () => { handSlots = [[],[],[]]; selectedCard = null; render(); };
+      footer.appendChild(clrBtn);
+    }
+
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'btn-big';
+    submitBtn.textContent = 'Submit Hands';
+    submitBtn.disabled = !allPlaced;
+    submitBtn.onclick = () => actionSubmitHands();
+    footer.appendChild(submitBtn);
+
+    const oppStatusEl = document.createElement('div');
+    oppStatusEl.className = 'opp-status ready';
+    oppStatusEl.textContent = '\u2713 Bot ready';
+    footer.appendChild(oppStatusEl);
+
+    wrap.appendChild(footer);
+    area.appendChild(wrap);
+
+    status.className = 'status-bar';
+    status.textContent = allPlaced ? 'All cards placed \u2014 click Submit Hands when ready' : `${pool.length} cards remaining`;
+  }
+
+  function toggleSelect(card) {
+    selectedCard = selectedCard === card ? null : card;
+    render();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (!selectedCard || state.phase !== 'organizing') return;
+    const hi = { '1': 0, '2': 1, '3': 2 }[e.key];
+    if (hi === undefined) return;
+    if (handSlots[hi].length >= 4) return;
+    handSlots[hi].push(selectedCard);
+    selectedCard = null;
+    render();
+  });
+
+  function placeCard(handIdx, slotIdx) {
+    if (!selectedCard) return;
+    if (handSlots[handIdx].length >= 4) return;
+    handSlots[handIdx].push(selectedCard);
+    selectedCard = null;
+    render();
+  }
+
+  function removeFromHand(handIdx, slotIdx) {
+    handSlots[handIdx].splice(slotIdx, 1);
+    selectedCard = null;
+    render();
+  }
+
+  function dropOntoSlot(e, toHandIdx) {
+    if (handSlots[toHandIdx].length >= 4) return;
+    const card = e.dataTransfer.getData('card');
+    const src  = e.dataTransfer.getData('src');
+    if (!card) return;
+    if (src.startsWith('hand:')) {
+      const [, fhi, fsi] = src.split(':');
+      if (+fhi === toHandIdx) return;
+      handSlots[+fhi].splice(+fsi, 1);
+    }
+    handSlots[toHandIdx].push(card);
+    selectedCard = null;
+    render();
+  }
+
+  // ── Phase: assigning ──
+  function renderAssigning(area, status) {
+    area.dataset.phase = 'assigning';
+    const myHands = state.players[myUsername].hands || [[],[],[]];
+    const allAssigned = localAssignments.every(a => a >= 0);
+
+    area.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'assign-wrap';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'organize-label';
+    lbl.textContent = 'Assign each of your hands to one of the 3 boards';
+    wrap.appendChild(lbl);
+
+    // Flop display
+    const flopRow = document.createElement('div');
+    flopRow.className = 'flop-row';
+    for (let bi = 0; bi < 3; bi++) {
+      const flop = (state.boards[bi] || {}).flop || [];
+      const assignedHandIdx = localAssignments.indexOf(bi);
+      const panel = document.createElement('div');
+      panel.className = 'flop-panel' + (assignedHandIdx >= 0 ? ' assigned-here' : '');
+      const fl = document.createElement('div'); fl.className = 'flop-label'; fl.textContent = `Board ${bi+1}`;
+      panel.appendChild(fl);
+      const fc = document.createElement('div'); fc.className = 'flop-cards';
+      flop.forEach(c => fc.appendChild(makeCard(c, true)));
+      panel.appendChild(fc);
+      const fa = document.createElement('div'); fa.className = 'flop-assigned';
+      fa.textContent = assignedHandIdx >= 0 ? `\u2190 Hand ${assignedHandIdx+1}` : '';
+      panel.appendChild(fa);
+      flopRow.appendChild(panel);
+    }
+    wrap.appendChild(flopRow);
+
+    // My hands with assignment buttons
+    const handsEl = document.createElement('div');
+    handsEl.className = 'assign-hands';
+    for (let hi = 0; hi < 3; hi++) {
+      const row = document.createElement('div');
+      row.className = 'assign-hand-row' + (localAssignments[hi] >= 0 ? ' assigned' : '');
+      const hl = document.createElement('div'); hl.className = 'assign-hand-label'; hl.textContent = `Hand ${hi+1}`;
+      row.appendChild(hl);
+      const hc = document.createElement('div'); hc.className = 'assign-hand-cards';
+      (myHands[hi] || []).forEach(c => hc.appendChild(makeCard(c, true)));
+      row.appendChild(hc);
+      const btns = document.createElement('div'); btns.className = 'assign-btns';
+      for (let bi = 0; bi < 3; bi++) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-board' + (localAssignments[hi] === bi ? ' active' : '');
+        btn.textContent = `B${bi+1}`;
+        const otherHandUsesThis = localAssignments.some((a, idx) => a === bi && idx !== hi);
+        if (otherHandUsesThis) btn.disabled = true;
+        btn.onclick = () => { assignHand(hi, bi); };
+        btns.appendChild(btn);
+      }
+      row.appendChild(btns);
+      handsEl.appendChild(row);
+    }
+    wrap.appendChild(handsEl);
+
+    // Footer
+    const footer = document.createElement('div');
+    footer.className = 'organize-footer';
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'btn-big';
+    submitBtn.textContent = 'Lock In';
+    submitBtn.disabled = !allAssigned;
+    submitBtn.onclick = () => actionSubmitAssignments();
+    footer.appendChild(submitBtn);
+    const oppEl = document.createElement('div');
+    oppEl.className = 'opp-status ready';
+    oppEl.textContent = '\u2713 Bot locked in';
+    footer.appendChild(oppEl);
+    wrap.appendChild(footer);
+    area.appendChild(wrap);
+
+    status.className = 'status-bar';
+    status.textContent = allAssigned ? 'All hands assigned \u2014 click Lock In to reveal' : 'Assign all 3 hands to different boards';
+  }
+
+  function assignHand(handIdx, boardIdx) {
+    if (localAssignments[handIdx] === boardIdx) {
+      localAssignments[handIdx] = -1;
+    } else {
+      localAssignments[handIdx] = boardIdx;
+    }
+    render();
+  }
+
+  // ── Phase: revealed / ended ──
+  function renderRevealed(area, status) {
+    area.dataset.phase = state.phase;
+
+    area.innerHTML = '';
+
+    // Ended summary
+    if (state.phase === 'ended') {
+      const sumEl = document.createElement('div');
+      sumEl.className = 'ended-summary';
+      sumEl.innerHTML = `<div class="ended-title">Hand Complete</div>`;
+      if (state.scoop) {
+        const badge = document.createElement('div');
+        badge.className = 'scoop-badge';
+        badge.textContent = `\uD83C\uDFC6 ${state.scoop === myUsername ? 'You' : state.scoop} scooped! +4 pts`;
+        sumEl.appendChild(badge);
+      }
+      const playAgain = document.createElement('button');
+      playAgain.className = 'btn-big';
+      playAgain.textContent = 'Play Again';
+      playAgain.onclick = () => actionStart();
+      sumEl.appendChild(playAgain);
+      area.appendChild(sumEl);
+    }
+
+    // 3 board panels
+    const boardsRow = document.createElement('div');
+    boardsRow.className = 'boards-row';
+
+    const myAssignments  = state.players[myUsername].assignments;
+    const oppAssignments = state.players[botName].assignments;
+    const myHands  = state.players[myUsername].hands || [[],[],[]];
+    const oppHands = state.players[botName].hands || [[],[],[]];
+    const handNames = state.handNames || [{},{},{}];
+
+    for (let bi = 0; bi < 3; bi++) {
+      const board = state.boards[bi] || { flop: [], turn: null, river: null };
+      const result = state.results[bi];
+
+      const myHandIdx  = myAssignments  ? myAssignments.indexOf(bi)  : -1;
+      const oppHandIdx = oppAssignments ? oppAssignments.indexOf(bi) : -1;
+      const myHand  = myHandIdx  >= 0 ? myHands[myHandIdx]   : [];
+      const oppHand = oppHandIdx >= 0 ? oppHands[oppHandIdx] : [];
+
+      const boardCards = [...board.flop];
+      if (board.turn)  boardCards.push(board.turn);
+      if (board.river) boardCards.push(board.river);
+
+      let panelClass = 'board-panel';
+      if (result) panelClass += result === myUsername ? ' won' : result === 'tie' ? ' tied' : ' lost';
+
+      const panel = document.createElement('div');
+      panel.className = panelClass;
+
+      // Label
+      const lblEl = document.createElement('div');
+      lblEl.className = 'bp-label';
+      lblEl.textContent = `Board ${bi + 1}`;
+      panel.appendChild(lblEl);
+
+      // Board cards
+      const boardCardsEl = document.createElement('div');
+      boardCardsEl.className = 'bp-board-cards';
+      boardCards.forEach(c => boardCardsEl.appendChild(makeCard(c, true)));
+      for (let i = boardCards.length; i < 5; i++) {
+        const ph = document.createElement('div');
+        ph.className = 'board-placeholder-sm';
+        boardCardsEl.appendChild(ph);
+      }
+      panel.appendChild(boardCardsEl);
+
+      // Equity bar
+      if (myHand.length === 4 && oppHand.length === 4) {
+        const eq = computeEquityForBoard(myHand, oppHand, boardCards);
+        const p1Pct = Math.round(eq.me * 100);
+        const p2Pct = 100 - p1Pct;
+        const eqWrap = document.createElement('div');
+        eqWrap.className = 'equity-wrap';
+        eqWrap.innerHTML = `
+          <div class="equity-bar">
+            <div class="equity-p1" style="width:${p1Pct}%">${p1Pct > 20 ? p1Pct+'%' : ''}</div>
+            <div class="equity-p2" style="width:${p2Pct}%">${p2Pct > 20 ? p2Pct+'%' : ''}</div>
+          </div>
+          <div class="equity-labels"><span>You ${p1Pct}%</span><span>${p2Pct}% Bot</span></div>`;
+        panel.appendChild(eqWrap);
+      }
+
+      // Player hands
+      const myP = buildPlayerBox(myUsername, myHand, result, handNames[bi][myUsername], true);
+      panel.appendChild(myP);
+      const oppP = buildPlayerBox(botName, oppHand, result, handNames[bi][botName], false);
+      panel.appendChild(oppP);
+
+      // Result badge or Run button
+      if (result) {
+        const badge = document.createElement('div');
+        badge.className = 'result-badge ' + (result === myUsername ? 'win' : result === 'tie' ? 'tie' : 'lose');
+        badge.textContent = result === 'tie' ? '\uD83E\uDD1D Chop' : result === myUsername ? '\uD83C\uDFC6 You win' : 'Bot wins';
+        panel.appendChild(badge);
+      } else if (state.phase === 'revealed' && bi === state.boardsRun) {
+        const cur = state.boards[bi] || {};
+        if (cur.turn && !cur.river) {
+          const msg = document.createElement('div');
+          msg.style.cssText = 'font-size:11px;color:#c8a84b;text-align:center';
+          msg.textContent = 'River in 2s\u2026';
+          panel.appendChild(msg);
+        } else if (!cur.turn) {
+          const runBtn = document.createElement('button');
+          runBtn.className = 'btn-run';
+          runBtn.textContent = `Run Board ${bi + 1}`;
+          runBtn.onclick = () => actionRunTurn();
+          panel.appendChild(runBtn);
+        }
+      }
+
+      boardsRow.appendChild(panel);
+    }
+
+    area.appendChild(boardsRow);
+
+    status.className = 'status-bar' + (state.phase === 'revealed' ? ' highlight' : '');
+    status.textContent = state.phase === 'ended' ? 'Hand complete \u2014 scores updated' : `Board ${state.boardsRun + 1} of 3`;
+  }
+
+  function buildPlayerBox(name, hand, result, handName, isMe) {
+    const box = document.createElement('div');
+    box.className = 'bp-player';
+    const lbl = document.createElement('div');
+    lbl.className = 'bp-player-label';
+    lbl.innerHTML = `<span>${name}${isMe ? ' (you)' : ''}</span>${handName ? `<span class="hand-name">${handName}</span>` : ''}`;
+    box.appendChild(lbl);
+    const cards = document.createElement('div');
+    cards.className = 'bp-player-cards';
+    hand.forEach(c => cards.appendChild(makeCard(c, true)));
+    box.appendChild(cards);
+    return box;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // EQUITY COMPUTATION
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const _equityCache = {};
+
+  function shuffleArr(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function computeEquityForBoard(hand1, hand2, board) {
+    if (!hand1.length || !hand2.length) return { me: 0.5 };
+
+    const cacheKey = [...hand1, ...hand2, ...board].join(',');
+    if (_equityCache[cacheKey] !== undefined) return _equityCache[cacheKey];
+
+    if (board.length >= 5) {
+      const r = compareHands(hand1, hand2, board.slice(0, 5));
+      const result = { me: r.winner === 'p1' ? 1 : r.winner === 'tie' ? 0.5 : 0 };
+      _equityCache[cacheKey] = result;
+      return result;
+    }
+
+    // All dead cards
+    const dead = new Set();
+    for (const p of [myUsername, botName]) {
+      for (const h of (state.players[p].hands || [])) {
+        if (Array.isArray(h)) h.forEach(c => dead.add(c));
+      }
+    }
+    for (const b of (state.boards || [])) {
+      (b.flop || []).forEach(c => dead.add(c));
+      if (b.turn)  dead.add(b.turn);
+      if (b.river) dead.add(b.river);
+    }
+
+    const available = buildDeck52().filter(c => !dead.has(c));
+    const need = 5 - board.length;
+    const SIMS = 1500;
+    let wins = 0;
+
+    for (let i = 0; i < SIMS; i++) {
+      shuffleArr(available);
+      const full = [...board, ...available.slice(0, need)];
+      const r = compareHands(hand1, hand2, full);
+      if (r.winner === 'p1') wins += 1;
+      else if (r.winner === 'tie') wins += 0.5;
+    }
+    const result = { me: wins / SIMS };
+    _equityCache[cacheKey] = result;
+    return result;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TOPBAR BUTTONS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  document.getElementById('btnReset').onclick = () => actionReset();
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // INITIAL RENDER
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  render();
+  </script>
+</body>
+</html>
