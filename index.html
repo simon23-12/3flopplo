@@ -379,6 +379,75 @@
       text-align: center; flex-shrink: 0;
     }
     .status-bar.highlight { color: #c8a84b; }
+
+    /* ── Stats / Ledger overlay ── */
+    .stats-overlay {
+      position: fixed; inset: 0;
+      background: #0a0c10;
+      z-index: 500;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .stats-overlay.open { display: flex; }
+    .stats-content { flex: 1; overflow-y: auto; max-width: 760px; margin: 0 auto; padding: 32px 20px; width: 100%; }
+
+    .stats-row { display: flex; gap: 12px; margin-bottom: 32px; flex-wrap: wrap; }
+    .stat-box {
+      flex: 1; min-width: 100px;
+      background: #13161d; border: 1px solid #252a35; border-radius: 10px;
+      padding: 14px 12px; text-align: center;
+    }
+    .stat-label { font-size: 10px; color: #4a5560; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .stat-value { font-size: 20px; font-weight: 800; }
+    .stat-value.pos { color: #4caf50; }
+    .stat-value.neg { color: #f44336; }
+    .stat-value.neutral { color: #c8a84b; }
+    .stat-value.ev { color: #e040fb; }
+
+    .score-cards { display: flex; gap: 16px; margin-bottom: 32px; }
+    .score-card {
+      flex: 1; background: #13161d; border: 1px solid #252a35; border-radius: 12px;
+      padding: 24px; text-align: center;
+    }
+    .score-name { font-size: 13px; color: #6a7080; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .score-amount { font-size: 32px; font-weight: 900; }
+    .score-amount.pos { color: #4caf50; }
+    .score-amount.neg { color: #f44336; }
+    .score-amount.zero { color: #6a7080; }
+    .score-hands { font-size: 12px; color: #4a5560; margin-top: 6px; }
+
+    .graph-container {
+      background: #13161d; border: 1px solid #252a35; border-radius: 12px;
+      padding: 20px; margin-bottom: 32px;
+    }
+    .graph-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .graph-title { font-size: 12px; color: #4a5560; text-transform: uppercase; letter-spacing: 2px; }
+    .graph-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6a7080; }
+    .legend-swatch { width: 16px; height: 3px; border-radius: 2px; }
+    .legend-swatch.dashed { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px); height: 2px; }
+    canvas#statsGraph { width: 100%; height: 220px; display: block; }
+
+    .section-title { font-size: 12px; color: #4a5560; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
+    .stats-table { width: 100%; border-collapse: collapse; }
+    .stats-table th {
+      text-align: left; font-size: 11px; color: #4a5560;
+      text-transform: uppercase; letter-spacing: 1px;
+      padding: 8px 12px; border-bottom: 1px solid #1a1f2e;
+    }
+    .stats-table td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #111520; }
+    .stats-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .td-hand { color: #5a6070; font-size: 11px; }
+    .td-amount { color: #4caf50; font-weight: 700; }
+    .td-ev { color: #e040fb; font-size: 12px; }
+    .td-scoop { color: #c8a84b; font-size: 11px; font-weight: 700; }
+    .board-results { display: flex; gap: 6px; }
+    .board-chip { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+    .board-chip.win  { background: rgba(76,175,80,0.15); color: #4caf50; }
+    .board-chip.lose { background: rgba(244,67,54,0.1); color: #f44336; }
+    .board-chip.tie  { background: rgba(100,120,160,0.1); color: #8090a0; }
+    .empty-ledger { text-align: center; color: #3a4050; padding: 48px 0; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -403,6 +472,7 @@
       <div class="score-pills" id="scorePills"></div>
     </div>
     <div class="topbar-right">
+      <button class="btn-top" id="btnStats">&#128202; Stats / Ledger</button>
       <button class="btn-top" id="btnReset">Reset Scores</button>
     </div>
   </div>
@@ -414,6 +484,34 @@
 
   <!-- Status bar -->
   <div class="status-bar" id="statusBar">Ready</div>
+
+  <!-- Stats / Ledger Overlay -->
+  <div class="stats-overlay" id="statsOverlay">
+    <div class="topbar">
+      <div class="topbar-title">&#128202; Stats / Ledger</div>
+      <button class="btn-top" id="btnStatsBack">&larr; Back to Table</button>
+    </div>
+    <div class="stats-content">
+      <div class="score-cards" id="statsScoreCards"></div>
+      <div class="stats-row" id="statsBoxes"></div>
+      <div class="graph-container" id="graphContainer" style="display:none">
+        <div class="graph-header">
+          <div class="graph-title">Results</div>
+          <div class="graph-legend" id="graphLegend"></div>
+        </div>
+        <canvas id="statsGraph"></canvas>
+      </div>
+      <div class="section-title">Hand History</div>
+      <table class="stats-table">
+        <thead>
+          <tr><th>#</th><th>Boards</th><th>Won</th><th>EV</th><th>Scoop</th><th>Time</th></tr>
+        </thead>
+        <tbody id="ledgerBody">
+          <tr><td colspan="6" class="empty-ledger">No hands played yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <script>
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -902,14 +1000,16 @@
       else if (p2Wins === 3) { state.scores[botName] = (state.scores[botName] || 0) + 1; state.scoop = botName; }
       state.phase = 'ended';
       saveScores(state.scores);
+      try { recordLedger(); } catch (e) { console.error('Ledger error:', e); }
     }
 
     render();
   }
 
   function actionReset() {
-    if (!confirm('Reset scores? Current game will also be cleared.')) return;
+    if (!confirm('Reset scores and history? Current game will also be cleared.')) return;
     localStorage.removeItem('3flop_scores');
+    localStorage.removeItem('3flop_ledger');
     state = freshState({ [myUsername]: 0, [botName]: 0 });
     lastRenderedPhase = null;
     render();
@@ -1475,10 +1575,295 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // LEDGER (localStorage)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  function loadLedger() {
+    try {
+      const raw = localStorage.getItem('3flop_ledger');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  }
+
+  function saveLedger(entries) {
+    localStorage.setItem('3flop_ledger', JSON.stringify(entries));
+  }
+
+  function computeBoardEquityEV(hand1, hand2, flop, deadCards) {
+    const ALL = buildDeck52();
+    const used = new Set([...hand1, ...hand2, ...flop, ...(deadCards || [])]);
+    const available = ALL.filter(c => !used.has(c));
+    const SIMS = 800;
+    let wins1 = 0;
+    for (let i = 0; i < SIMS; i++) {
+      const a = [...available];
+      for (let j = a.length - 1; j > a.length - 3; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        [a[j], a[k]] = [a[k], a[j]];
+      }
+      const board5 = [...flop, a[a.length - 1], a[a.length - 2]];
+      const r = compareHands(hand1, hand2, board5);
+      if (r.winner === 'p1') wins1 += 1;
+      else if (r.winner === 'tie') wins1 += 0.5;
+    }
+    return wins1 / SIMS;
+  }
+
+  function computeEV(st) {
+    const p1 = myUsername, p2 = botName;
+    const p1Data = st.players[p1], p2Data = st.players[p2];
+    const allHoleCards = [...(p1Data.holeCards || []), ...(p2Data.holeCards || [])];
+    const allBoardCards = st.boards.flatMap(b => [...(b.flop || []), ...(b.turn ? [b.turn] : []), ...(b.river ? [b.river] : [])]);
+    const deadBase = [...allHoleCards, ...allBoardCards];
+
+    const equities = [];
+    for (let bi = 0; bi < 3; bi++) {
+      const p1HandIdx = p1Data.assignments.indexOf(bi);
+      const p2HandIdx = p2Data.assignments.indexOf(bi);
+      const p1Hand = p1Data.hands[p1HandIdx];
+      const p2Hand = p2Data.hands[p2HandIdx];
+      const flop = st.boards[bi].flop;
+      const dead = deadBase.filter(c => !p1Hand.includes(c) && !p2Hand.includes(c) && !flop.includes(c));
+      equities.push(computeBoardEquityEV(p1Hand, p2Hand, flop, dead));
+    }
+
+    const p1Eq = equities.reduce((s, e) => s + e, 0);
+    const p2Eq = equities.reduce((s, e) => s + (1 - e), 0);
+    const p1ScoopProb = equities.reduce((p, e) => p * e, 1);
+    const p2ScoopProb = equities.reduce((p, e) => p * (1 - e), 1);
+
+    return {
+      [p1]: Math.round((p1Eq + p1ScoopProb) * 100) / 100,
+      [p2]: Math.round((p2Eq + p2ScoopProb) * 100) / 100,
+      boardEquities: equities,
+    };
+  }
+
+  function recordLedger() {
+    const entries = loadLedger();
+    const p1 = myUsername, p2 = botName;
+
+    const pts = { [p1]: 0, [p2]: 0 };
+    for (let bi = 0; bi < 3; bi++) {
+      const r = state.results[bi];
+      if (r === p1) pts[p1]++;
+      else if (r === p2) pts[p2]++;
+    }
+    if (state.scoop === p1) pts[p1]++;
+    else if (state.scoop === p2) pts[p2]++;
+
+    const ev = computeEV(state);
+
+    const entry = {
+      handNumber: entries.length + 1,
+      timestamp: Date.now(),
+      results: [...state.results],
+      scoop: state.scoop,
+      pointsGained: pts,
+      ev,
+      handNames: state.handNames,
+    };
+    entries.push(entry);
+    saveLedger(entries);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // STATS / LEDGER UI
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  function openStats() {
+    document.getElementById('statsOverlay').classList.add('open');
+    renderStats();
+  }
+
+  function closeStats() {
+    document.getElementById('statsOverlay').classList.remove('open');
+  }
+
+  function renderStats() {
+    const entries = loadLedger();
+    const me = myUsername;
+    const opp = botName;
+
+    // Score cards
+    let meTotal = 0, oppTotal = 0;
+    for (const e of entries) {
+      meTotal += e.pointsGained?.[me] ?? 0;
+      oppTotal += e.pointsGained?.[opp] ?? 0;
+    }
+
+    const scCards = document.getElementById('statsScoreCards');
+    scCards.innerHTML = `
+      <div class="score-card">
+        <div class="score-name">${me}</div>
+        <div class="score-amount ${meTotal > 0 ? 'pos' : meTotal < 0 ? 'neg' : 'zero'}">${meTotal > 0 ? '+' : ''}${meTotal} pts</div>
+        <div class="score-hands">${entries.length} hands · ${entries.filter(e => e.scoop === me).length} scoops</div>
+      </div>
+      <div class="score-card">
+        <div class="score-name">${opp}</div>
+        <div class="score-amount ${oppTotal > 0 ? 'pos' : oppTotal < 0 ? 'neg' : 'zero'}">${oppTotal > 0 ? '+' : ''}${oppTotal} pts</div>
+        <div class="score-hands">${entries.length} hands · ${entries.filter(e => e.scoop === opp).length} scoops</div>
+      </div>`;
+
+    // Stats boxes
+    const statsEl = document.getElementById('statsBoxes');
+    if (entries.length > 0) {
+      let totalWon = 0, totalEV = 0, totalBoards = 0;
+      for (const e of entries) {
+        totalWon += e.pointsGained?.[me] ?? 0;
+        const ev = e.ev?.[me] ?? (e.pointsGained?.[me] ?? 0);
+        totalEV += (typeof ev === 'number' ? ev : 0);
+        totalBoards += (e.results || []).length;
+      }
+      const rounds = entries.length;
+      const avgEVBoard = totalBoards > 0 ? totalEV / totalBoards : 0;
+      const avgEVRound = rounds > 0 ? totalEV / rounds : 0;
+      const wonDiff = totalWon - totalEV;
+
+      statsEl.innerHTML = `
+        <div class="stat-box"><div class="stat-label">Won</div>
+          <div class="stat-value ${totalWon > 0 ? 'pos' : totalWon < 0 ? 'neg' : 'neutral'}">${totalWon > 0 ? '+' : ''}${totalWon}</div></div>
+        <div class="stat-box"><div class="stat-label">EV</div>
+          <div class="stat-value ev">${totalEV >= 0 ? '+' : ''}${totalEV.toFixed(1)}</div></div>
+        <div class="stat-box"><div class="stat-label">Won − EV</div>
+          <div class="stat-value ${wonDiff > 0.5 ? 'pos' : wonDiff < -0.5 ? 'neg' : 'neutral'}">${wonDiff >= 0 ? '+' : ''}${wonDiff.toFixed(1)}</div></div>
+        <div class="stat-box"><div class="stat-label">Avg EV / Board</div>
+          <div class="stat-value ev">${avgEVBoard.toFixed(2)}</div></div>
+        <div class="stat-box"><div class="stat-label">Avg EV / Round</div>
+          <div class="stat-value ev">${avgEVRound.toFixed(2)}</div></div>`;
+    } else {
+      statsEl.innerHTML = '';
+    }
+
+    // Graph
+    const graphEl = document.getElementById('graphContainer');
+    if (entries.length >= 2) {
+      graphEl.style.display = 'block';
+      document.getElementById('graphLegend').innerHTML = `
+        <div class="legend-item"><div class="legend-swatch" style="background:#4caf50"></div>You Won</div>
+        <div class="legend-item"><div class="legend-swatch dashed" style="color:#e040fb"></div>You EV</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#f44336"></div>Bot Won</div>
+        <div class="legend-item"><div class="legend-swatch dashed" style="color:#ff9800"></div>Bot EV</div>`;
+
+      let cumMe = 0, cumMeEV = 0, cumOpp = 0, cumOppEV = 0;
+      const meLine = [0], meEVLine = [0], oppLine = [0], oppEVLine = [0];
+      for (const e of entries) {
+        const myPts = e.pointsGained?.[me] ?? 0;
+        const myEV = e.ev?.[me] ?? myPts;
+        const oppPts = e.pointsGained?.[opp] ?? 0;
+        const oppEV = e.ev?.[opp] ?? oppPts;
+        cumMe += myPts; cumMeEV += (typeof myEV === 'number' ? myEV : myPts);
+        cumOpp += oppPts; cumOppEV += (typeof oppEV === 'number' ? oppEV : oppPts);
+        meLine.push(cumMe); meEVLine.push(cumMeEV);
+        oppLine.push(cumOpp); oppEVLine.push(cumOppEV);
+      }
+      const lines = [
+        { data: oppEVLine, color: '#ff9800', width: 1.2, dash: [5, 4] },
+        { data: oppLine, color: '#f44336', width: 1.5 },
+        { data: meEVLine, color: '#e040fb', width: 1.2, dash: [5, 4] },
+        { data: meLine, color: '#4caf50', width: 2.5 },
+      ];
+      drawStatsGraph(meLine.length, lines, ' pts');
+    } else {
+      graphEl.style.display = 'none';
+    }
+
+    // Hand history table
+    const tbody = document.getElementById('ledgerBody');
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-ledger">No hands played yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    const reversed = [...entries].reverse();
+    for (const e of reversed) {
+      const tr = document.createElement('tr');
+      const time = new Date(e.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      const date = new Date(e.timestamp).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+      const boardsHtml = (e.results || []).map((r, i) => {
+        const cls = r === me ? 'win' : r === 'tie' ? 'tie' : 'lose';
+        const label = r === me ? 'W' : r === 'tie' ? 'T' : 'L';
+        return `<span class="board-chip ${cls}">B${i+1}:${label}</span>`;
+      }).join('');
+      const myPts = e.pointsGained?.[me] ?? 0;
+      const myEV = e.ev?.[me];
+      const evStr = typeof myEV === 'number' ? myEV.toFixed(2) : '—';
+      tr.innerHTML = `
+        <td class="td-hand">#${e.handNumber}</td>
+        <td><div class="board-results">${boardsHtml}</div></td>
+        <td class="td-amount">${myPts > 0 ? '+' : ''}${myPts} pts</td>
+        <td class="td-ev">${evStr}</td>
+        <td class="td-scoop">${e.scoop ? (e.scoop === me ? '🏆 You' : e.scoop) : '—'}</td>
+        <td class="td-hand">${date} ${time}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function drawStatsGraph(dataLen, lines, yUnit) {
+    const canvas = document.getElementById('statsGraph');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const W = rect.width, H = rect.height;
+
+    const allVals = lines.flatMap(l => l.data);
+    let minY = Math.min(...allVals), maxY = Math.max(...allVals);
+    if (minY === maxY) { minY -= 1; maxY += 1; }
+    const padY = (maxY - minY) * 0.1;
+    minY -= padY; maxY += padY;
+
+    const pad = { left: 52, right: 16, top: 16, bottom: 28 };
+    const gW = W - pad.left - pad.right, gH = H - pad.top - pad.bottom;
+    function xPos(i) { return pad.left + (i / (dataLen - 1)) * gW; }
+    function yPos(v) { return pad.top + (1 - (v - minY) / (maxY - minY)) * gH; }
+
+    ctx.fillStyle = '#13161d'; ctx.fillRect(0, 0, W, H);
+
+    const nGrid = 5;
+    ctx.strokeStyle = '#1a1f2e'; ctx.lineWidth = 1;
+    ctx.fillStyle = '#4a5560'; ctx.font = '10px "Segoe UI", sans-serif'; ctx.textAlign = 'right';
+    for (let i = 0; i <= nGrid; i++) {
+      const v = minY + (maxY - minY) * (i / nGrid);
+      const y = yPos(v);
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+      ctx.fillText(Math.round(v) + yUnit, pad.left - 6, y + 3);
+    }
+
+    if (minY < 0 && maxY > 0) {
+      ctx.strokeStyle = '#3a4050'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(pad.left, yPos(0)); ctx.lineTo(W - pad.right, yPos(0)); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#4a5560'; ctx.textAlign = 'center';
+    const xSteps = Math.min(6, dataLen - 1);
+    for (let i = 0; i <= xSteps; i++) {
+      const idx = Math.round((i / xSteps) * (dataLen - 1));
+      ctx.fillText(idx, xPos(idx), H - 6);
+    }
+
+    for (const line of lines) {
+      ctx.strokeStyle = line.color; ctx.lineWidth = line.width;
+      ctx.setLineDash(line.dash || []); ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < line.data.length; i++) {
+        const x = xPos(i), y = yPos(line.data[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // TOPBAR BUTTONS
   // ═══════════════════════════════════════════════════════════════════════════════
 
   document.getElementById('btnReset').onclick = () => actionReset();
+  document.getElementById('btnStats').onclick = () => openStats();
+  document.getElementById('btnStatsBack').onclick = () => closeStats();
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // INITIAL RENDER
