@@ -1281,8 +1281,19 @@
         if (card) {
           const cel = makeCard(card);
           cel.classList.add('in-hand');
-          cel.title = 'Click to remove';
-          cel.onclick = () => { removeFromHand(hi, si); };
+          if (card === selectedCard) cel.classList.add('selected');
+          cel.title = 'Click to select, then place elsewhere';
+          cel.onclick = () => {
+            if (selectedCard === card) {
+              // Deselect
+              selectedCard = null;
+            } else {
+              // Select this card (remove from hand, mark selected)
+              handSlots[hi].splice(si, 1);
+              selectedCard = card;
+            }
+            render();
+          };
           cel.draggable = true;
           cel.addEventListener('dragstart', e => {
             e.dataTransfer.effectAllowed = 'move';
