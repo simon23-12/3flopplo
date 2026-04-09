@@ -12,6 +12,7 @@
       color: #e0e0e0;
       font-family: 'Segoe UI', Arial, sans-serif;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -80,6 +81,16 @@
       transition: all 0.15s;
     }
     .btn-top:hover { background: #222840; color: #c0c8d8; }
+    .btn-top.captain-on {
+      background: #2a0d0d; border-color: #8b1a1a; color: #f44336;
+    }
+    .btn-top.captain-on:hover { background: #3a1010; color: #ff6b6b; }
+    .captain-banner {
+      background: #2a0d0d; border-bottom: 1px solid #8b1a1a;
+      color: #f44336; font-size: 11px; font-weight: 700;
+      text-align: center; padding: 4px; letter-spacing: 1px;
+      flex-shrink: 0;
+    }
 
     /* ── Main area ── */
     .main-area {
@@ -610,6 +621,9 @@
 </head>
 <body>
 
+  <!-- Captain Mode Banner -->
+  <div class="captain-banner" id="captainBanner" style="display:none">&#9760; CAPTAIN MODE &mdash; Bot plays maximally bad &middot; stats tracked separately</div>
+
   <!-- Splash Screen -->
   <div class="splash" id="splash">
     <div class="splash-card">
@@ -630,6 +644,7 @@
       <div class="score-pills" id="scorePills"></div>
     </div>
     <div class="topbar-right">
+      <button class="btn-top" id="btnCaptain">&#9760; Captain Mode</button>
       <button class="btn-top" id="btnStats">&#128202; Stats / Ledger</button>
       <button class="btn-top" id="btnReset">Reset Scores</button>
     </div>
@@ -646,7 +661,7 @@
   <!-- Stats / Ledger Overlay -->
   <div class="stats-overlay" id="statsOverlay">
     <div class="topbar">
-      <div class="topbar-title">&#128202; Stats / Ledger</div>
+      <div class="topbar-title" id="statsPanelTitle">&#128202; Stats / Ledger</div>
       <button class="btn-top" id="btnStatsBack">&larr; Back to Table</button>
     </div>
     <div class="stats-content">
@@ -939,6 +954,45 @@
     return bestPerm;
   }
 
+  // ── Captain Mode: worst-possible bot strategy ──
+
+  function captainBotOrganize(cards) {
+    // Choose the split that MINIMIZES total hand quality (worst possible hands)
+    const splits = allSplits(cards);
+    let worstScore = Infinity;
+    let worstSplit = null;
+    for (const split of splits) {
+      const total = split.reduce((s, h) => s + scoreHandQuality(h), 0);
+      if (total < worstScore) {
+        worstScore = total;
+        worstSplit = split;
+      }
+    }
+    return worstSplit;
+  }
+
+  function captainBotAssign(hands, boards, allDeadCards) {
+    // Choose the permutation that MINIMIZES total board affinity (worst assignments)
+    const perms = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+    let worstScore = Infinity;
+    let worstPerm = [0, 1, 2];
+
+    for (const perm of perms) {
+      let total = 0;
+      for (let hi = 0; hi < 3; hi++) {
+        const bi = perm[hi];
+        const flop = boards[bi].flop;
+        total += handBoardAffinity(hands[hi], flop, allDeadCards);
+      }
+      if (total < worstScore) {
+        worstScore = total;
+        worstPerm = perm;
+      }
+    }
+
+    return worstPerm;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // SPLASH SCREEN
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -956,23 +1010,29 @@
   const myUsername = 'You';
   const botName = 'Bot';
 
-  function loadScores() {
+  let captainMode = localStorage.getItem('3flop_captain') === '1';
+
+  function scoresKey(isCaptain) { return isCaptain ? '3flop_scores_captain' : '3flop_scores'; }
+  function ledgerKey(isCaptain) { return isCaptain ? '3flop_ledger_captain' : '3flop_ledger'; }
+
+  function loadScores(isCaptain) {
     try {
-      const raw = localStorage.getItem('3flop_scores');
+      const raw = localStorage.getItem(scoresKey(isCaptain ?? captainMode));
       if (raw) return JSON.parse(raw);
     } catch {}
     return { [myUsername]: 0, [botName]: 0 };
   }
 
   function saveScores(scores) {
-    localStorage.setItem('3flop_scores', JSON.stringify(scores));
+    localStorage.setItem(scoresKey(state.captainMode), JSON.stringify(scores));
   }
 
   function freshPlayerSlot() {
     return { holeCards: [], hands: null, assignments: null, readyOrganizing: false, readyAssigning: false };
   }
 
-  function freshState(prevScores) {
+  function freshState(prevScores, isCaptain) {
+    const cm = isCaptain ?? captainMode;
     return {
       phase: 'waiting',
       deck: [],
@@ -985,9 +1045,10 @@
       results: [null, null, null],
       scoop: null,
       players: { [myUsername]: freshPlayerSlot(), [botName]: freshPlayerSlot() },
-      scores: prevScores || loadScores(),
+      scores: prevScores || loadScores(cm),
       handNames: [{}, {}, {}],
       host: myUsername,
+      captainMode: cm,
     };
   }
 
@@ -1016,7 +1077,9 @@
 
   const saved = loadGameSession();
 
-  let state = saved ? saved.state : freshState();
+  let state = saved ? saved.state : freshState(null, captainMode);
+  // Ensure captainMode field exists on loaded state
+  if (state.captainMode === undefined) state.captainMode = false;
 
   // Organizing phase - client-side state
   let myHoleCards = saved ? (saved.myHoleCards || []) : [];
@@ -1038,7 +1101,9 @@
 
   function actionStart() {
     if (state.phase !== 'waiting' && state.phase !== 'ended') return;
-    const prevScores = state.scores;
+    const isCaptain = captainMode;
+    // If switching modes, load fresh scores for the new mode; otherwise keep current
+    const prevScores = state.captainMode === isCaptain ? state.scores : loadScores(isCaptain);
     const deck = buildDeck();
 
     const p1Cards = deck.splice(0, 12);
@@ -1050,15 +1115,15 @@
       { flop: deck.splice(0, 3), turn: null, river: null },
     ];
 
-    state = freshState(prevScores);
+    state = freshState(prevScores, isCaptain);
     state.phase = 'organizing';
     state.deck = deck;
     state.boards = boards;
     state.players[myUsername].holeCards = p1Cards;
     state.players[botName].holeCards = p2Cards;
 
-    // Bot auto-organizes immediately
-    const botHands = botOrganize(p2Cards);
+    // Bot auto-organizes immediately (worst strategy in captain mode)
+    const botHands = isCaptain ? captainBotOrganize(p2Cards) : botOrganize(p2Cards);
     state.players[botName].hands = botHands;
     state.players[botName].readyOrganizing = true;
 
@@ -1088,13 +1153,15 @@
     if (state.players[botName].readyOrganizing) {
       state.phase = 'assigning';
 
-      // Bot auto-assigns
+      // Bot auto-assigns (worst strategy in captain mode)
       const allDeadCards = [
         ...state.players[myUsername].holeCards,
         ...state.players[botName].holeCards,
         ...state.boards.flatMap(b => b.flop),
       ];
-      const botAssignments = botAssign(state.players[botName].hands, state.boards, allDeadCards);
+      const botAssignments = state.captainMode
+        ? captainBotAssign(state.players[botName].hands, state.boards, allDeadCards)
+        : botAssign(state.players[botName].hands, state.boards, allDeadCards);
       state.players[botName].assignments = botAssignments;
       state.players[botName].readyAssigning = true;
 
@@ -1140,6 +1207,56 @@
         actionRunRiver();
       }, 2000);
     }
+  }
+
+  function actionRunAllBoards() {
+    if (state.phase !== 'revealed') return;
+
+    function evalBoard(bi) {
+      const board = state.boards[bi];
+      const p1HandIdx = state.players[myUsername].assignments.indexOf(bi);
+      const p2HandIdx = state.players[botName].assignments.indexOf(bi);
+      const p1Hand = state.players[myUsername].hands[p1HandIdx];
+      const p2Hand = state.players[botName].hands[p2HandIdx];
+      const fullBoard = [...board.flop, board.turn, board.river];
+      const { winner, r1, r2 } = compareHands(p1Hand, p2Hand, fullBoard);
+      if (winner === 'p1') { state.results[bi] = myUsername; state.scores[myUsername] = (state.scores[myUsername] || 0) + 1; }
+      else if (winner === 'p2') { state.results[bi] = botName; state.scores[botName] = (state.scores[botName] || 0) + 1; }
+      else { state.results[bi] = 'tie'; }
+      if (!state.handNames) state.handNames = [{}, {}, {}];
+      state.handNames[bi][myUsername] = r1.handName;
+      state.handNames[bi][botName] = r2.handName;
+      state.boardsRun++;
+    }
+
+    function nextStep() {
+      if (state.phase !== 'revealed') return;
+      const bi = state.boardsRun;
+      if (bi >= 3) return;
+      const board = state.boards[bi];
+      if (!board.turn) {
+        board.turn = state.deck.shift();
+        render();
+        setTimeout(nextStep, 1000);
+      } else if (!board.river) {
+        board.river = state.deck.shift();
+        evalBoard(bi);
+        if (state.boardsRun === 3) {
+          const p1Wins = state.results.filter(r => r === myUsername).length;
+          const p2Wins = state.results.filter(r => r === botName).length;
+          if (p1Wins === 3) { state.scores[myUsername] = (state.scores[myUsername] || 0) + 1; state.scoop = myUsername; }
+          else if (p2Wins === 3) { state.scores[botName] = (state.scores[botName] || 0) + 1; state.scoop = botName; }
+          state.phase = 'ended';
+          saveScores(state.scores);
+          clearGameSession();
+          try { recordLedger(); } catch (e) { console.error('Ledger error:', e); }
+        }
+        render();
+        if (state.boardsRun < 3) setTimeout(nextStep, 1000);
+      }
+    }
+
+    nextStep();
   }
 
   function actionRunRiver() {
@@ -1192,11 +1309,12 @@
   }
 
   function actionReset() {
-    if (!confirm('Reset scores and history? Current game will also be cleared.')) return;
-    localStorage.removeItem('3flop_scores');
-    localStorage.removeItem('3flop_ledger');
+    const modeName = captainMode ? 'Captain Mode' : 'Regular';
+    if (!confirm(`Reset ${modeName} scores and history? Current game will also be cleared.`)) return;
+    localStorage.removeItem(scoresKey(captainMode));
+    localStorage.removeItem(ledgerKey(captainMode));
     clearGameSession();
-    state = freshState({ [myUsername]: 0, [botName]: 0 });
+    state = freshState({ [myUsername]: 0, [botName]: 0 }, captainMode);
     lastRenderedPhase = null;
     render();
   }
@@ -1721,6 +1839,18 @@
 
     area.appendChild(boardsRow);
 
+    // Run All Boards button
+    const existingRunAll = area.querySelector('.btn-run-all');
+    if (existingRunAll) existingRunAll.remove();
+    if (state.phase === 'revealed' && state.boardsRun < 3) {
+      const runAllBtn = document.createElement('button');
+      runAllBtn.className = 'btn-run btn-run-all';
+      runAllBtn.textContent = 'Run All Boards';
+      runAllBtn.style.cssText = 'display:block;width:fit-content;margin:8px auto 0';
+      runAllBtn.onclick = () => actionRunAllBoards();
+      area.appendChild(runAllBtn);
+    }
+
     status.className = 'status-bar' + (state.phase === 'revealed' ? ' highlight' : '');
     status.textContent = state.phase === 'ended' ? 'Hand complete \u2014 scores updated' : `Board ${state.boardsRun + 1} of 3`;
   }
@@ -1766,18 +1896,8 @@
       return result;
     }
 
-    // All dead cards
-    const dead = new Set();
-    for (const p of [myUsername, botName]) {
-      for (const h of (state.players[p].hands || [])) {
-        if (Array.isArray(h)) h.forEach(c => dead.add(c));
-      }
-    }
-    for (const b of (state.boards || [])) {
-      (b.flop || []).forEach(c => dead.add(c));
-      if (b.turn)  dead.add(b.turn);
-      if (b.river) dead.add(b.river);
-    }
+    // Only exclude the two hands and this board's cards
+    const dead = new Set([...hand1, ...hand2, ...board]);
 
     const available = buildDeck52().filter(c => !dead.has(c));
     const need = 5 - board.length;
@@ -1800,21 +1920,21 @@
   // LEDGER (localStorage)
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  function loadLedger() {
+  function loadLedger(isCaptain) {
     try {
-      const raw = localStorage.getItem('3flop_ledger');
+      const raw = localStorage.getItem(ledgerKey(isCaptain ?? captainMode));
       if (raw) return JSON.parse(raw);
     } catch {}
     return [];
   }
 
   function saveLedger(entries) {
-    localStorage.setItem('3flop_ledger', JSON.stringify(entries));
+    localStorage.setItem(ledgerKey(state.captainMode), JSON.stringify(entries));
   }
 
-  function computeBoardEquityEV(hand1, hand2, flop, deadCards) {
+  function computeBoardEquityEV(hand1, hand2, flop) {
     const ALL = buildDeck52();
-    const used = new Set([...hand1, ...hand2, ...flop, ...(deadCards || [])]);
+    const used = new Set([...hand1, ...hand2, ...flop]);
     const available = ALL.filter(c => !used.has(c));
     const SIMS = 800;
     let wins1 = 0;
@@ -1835,10 +1955,6 @@
   function computeEV(st) {
     const p1 = myUsername, p2 = botName;
     const p1Data = st.players[p1], p2Data = st.players[p2];
-    const allHoleCards = [...(p1Data.holeCards || []), ...(p2Data.holeCards || [])];
-    const allBoardCards = st.boards.flatMap(b => [...(b.flop || []), ...(b.turn ? [b.turn] : []), ...(b.river ? [b.river] : [])]);
-    const deadBase = [...allHoleCards, ...allBoardCards];
-
     const equities = [];
     for (let bi = 0; bi < 3; bi++) {
       const p1HandIdx = p1Data.assignments.indexOf(bi);
@@ -1846,8 +1962,7 @@
       const p1Hand = p1Data.hands[p1HandIdx];
       const p2Hand = p2Data.hands[p2HandIdx];
       const flop = st.boards[bi].flop;
-      const dead = deadBase.filter(c => !p1Hand.includes(c) && !p2Hand.includes(c) && !flop.includes(c));
-      equities.push(computeBoardEquityEV(p1Hand, p2Hand, flop, dead));
+      equities.push(computeBoardEquityEV(p1Hand, p2Hand, flop));
     }
 
     const p1Eq = equities.reduce((s, e) => s + e, 0);
@@ -1856,14 +1971,25 @@
     const p2ScoopProb = equities.reduce((p, e) => p * (1 - e), 1);
 
     return {
-      [p1]: Math.round((p1Eq + p1ScoopProb) * 100) / 100,
-      [p2]: Math.round((p2Eq + p2ScoopProb) * 100) / 100,
+      [p1]: Math.round(p1Eq * 100) / 100,
+      [p2]: Math.round(p2Eq * 100) / 100,
       boardEquities: equities,
     };
   }
 
+  // Always derive EV from boardEquities (scoop-free), falling back to stored value
+  function entryEV(e, player) {
+    if (e.ev?.boardEquities) {
+      const eqs = e.ev.boardEquities;
+      return player === myUsername
+        ? eqs.reduce((s, eq) => s + eq, 0)
+        : eqs.reduce((s, eq) => s + (1 - eq), 0);
+    }
+    return e.ev?.[player] ?? null;
+  }
+
   function recordLedger() {
-    const entries = loadLedger();
+    const entries = loadLedger(state.captainMode);
     const p1 = myUsername, p2 = botName;
 
     const pts = { [p1]: 0, [p2]: 0 };
@@ -1904,28 +2030,36 @@
   }
 
   function renderStats() {
-    const entries = loadLedger();
+    const entries = loadLedger(captainMode);
     const me = myUsername;
-    const opp = botName;
+    const opp = captainMode ? 'Captain' : botName;
+    const oppLedgerName = botName; // ledger entries always use botName
+
+    // Update panel title to reflect mode
+    const titleEl = document.getElementById('statsPanelTitle');
+    if (titleEl) titleEl.innerHTML = captainMode
+      ? '&#128202; Stats / Ledger &mdash; <span style="color:#f44336">&#9760; Captain Mode</span>'
+      : '&#128202; Stats / Ledger';
 
     // Score cards
     let meTotal = 0, oppTotal = 0;
     for (const e of entries) {
       meTotal += e.pointsGained?.[me] ?? 0;
-      oppTotal += e.pointsGained?.[opp] ?? 0;
+      oppTotal += e.pointsGained?.[oppLedgerName] ?? 0;
     }
 
+    const modeLabel = captainMode ? ' &#9760; Captain Mode' : '';
     const scCards = document.getElementById('statsScoreCards');
     scCards.innerHTML = `
       <div class="score-card">
-        <div class="score-name">${me}</div>
+        <div class="score-name">${me}${modeLabel}</div>
         <div class="score-amount ${meTotal > 0 ? 'pos' : meTotal < 0 ? 'neg' : 'zero'}">${meTotal > 0 ? '+' : ''}${meTotal} pts</div>
         <div class="score-hands">${entries.length} hands · ${entries.filter(e => e.scoop === me).length} scoops</div>
       </div>
       <div class="score-card">
         <div class="score-name">${opp}</div>
         <div class="score-amount ${oppTotal > 0 ? 'pos' : oppTotal < 0 ? 'neg' : 'zero'}">${oppTotal > 0 ? '+' : ''}${oppTotal} pts</div>
-        <div class="score-hands">${entries.length} hands · ${entries.filter(e => e.scoop === opp).length} scoops</div>
+        <div class="score-hands">${entries.length} hands · ${entries.filter(e => e.scoop === oppLedgerName).length} scoops</div>
       </div>`;
 
     // Stats boxes
@@ -1934,7 +2068,7 @@
       let totalWon = 0, totalEV = 0, totalBoards = 0;
       for (const e of entries) {
         totalWon += e.pointsGained?.[me] ?? 0;
-        const ev = e.ev?.[me] ?? (e.pointsGained?.[me] ?? 0);
+        const ev = entryEV(e, me) ?? (e.pointsGained?.[me] ?? 0);
         totalEV += (typeof ev === 'number' ? ev : 0);
         totalBoards += (e.results || []).length;
       }
@@ -1962,19 +2096,21 @@
     const graphEl = document.getElementById('graphContainer');
     if (entries.length >= 2) {
       graphEl.style.display = 'block';
+      const oppGraphLabel = captainMode ? 'Captain Won' : 'Bot Won';
+      const oppGraphEVLabel = captainMode ? 'Captain EV' : 'Bot EV';
       document.getElementById('graphLegend').innerHTML = `
         <div class="legend-item"><div class="legend-swatch" style="background:#4caf50"></div>You Won</div>
         <div class="legend-item"><div class="legend-swatch dashed" style="color:#e040fb"></div>You EV</div>
-        <div class="legend-item"><div class="legend-swatch" style="background:#f44336"></div>Bot Won</div>
-        <div class="legend-item"><div class="legend-swatch dashed" style="color:#ff9800"></div>Bot EV</div>`;
+        <div class="legend-item"><div class="legend-swatch" style="background:#f44336"></div>${oppGraphLabel}</div>
+        <div class="legend-item"><div class="legend-swatch dashed" style="color:#ff9800"></div>${oppGraphEVLabel}</div>`;
 
       let cumMe = 0, cumMeEV = 0, cumOpp = 0, cumOppEV = 0;
       const meLine = [0], meEVLine = [0], oppLine = [0], oppEVLine = [0];
       for (const e of entries) {
         const myPts = e.pointsGained?.[me] ?? 0;
-        const myEV = e.ev?.[me] ?? myPts;
-        const oppPts = e.pointsGained?.[opp] ?? 0;
-        const oppEV = e.ev?.[opp] ?? oppPts;
+        const myEV = entryEV(e, me) ?? myPts;
+        const oppPts = e.pointsGained?.[oppLedgerName] ?? 0;
+        const oppEV = entryEV(e, oppLedgerName) ?? oppPts;
         cumMe += myPts; cumMeEV += (typeof myEV === 'number' ? myEV : myPts);
         cumOpp += oppPts; cumOppEV += (typeof oppEV === 'number' ? oppEV : oppPts);
         meLine.push(cumMe); meEVLine.push(cumMeEV);
@@ -2009,14 +2145,14 @@
         return `<span class="board-chip ${cls}">B${i+1}:${label}</span>`;
       }).join('');
       const myPts = e.pointsGained?.[me] ?? 0;
-      const myEV = e.ev?.[me];
+      const myEV = entryEV(e, me);
       const evStr = typeof myEV === 'number' ? myEV.toFixed(2) : '—';
       tr.innerHTML = `
         <td class="td-hand">#${e.handNumber}</td>
         <td><div class="board-results">${boardsHtml}</div></td>
         <td class="td-amount">${myPts > 0 ? '+' : ''}${myPts} pts</td>
         <td class="td-ev">${evStr}</td>
-        <td class="td-scoop">${e.scoop ? (e.scoop === me ? '🏆 You' : e.scoop) : '—'}</td>
+        <td class="td-scoop">${e.scoop ? (e.scoop === me ? '🏆 You' : (captainMode ? '☠ Captain' : e.scoop)) : '—'}</td>
         <td class="td-hand">${date} ${time}</td>`;
       tbody.appendChild(tr);
     }
@@ -2080,9 +2216,40 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // CAPTAIN MODE TOGGLE
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  function updateCaptainUI() {
+    const btn = document.getElementById('btnCaptain');
+    const banner = document.getElementById('captainBanner');
+    if (captainMode) {
+      btn.classList.add('captain-on');
+      btn.textContent = '\u2620 Captain ON';
+      banner.style.display = 'block';
+    } else {
+      btn.classList.remove('captain-on');
+      btn.textContent = '\u2620 Captain Mode';
+      banner.style.display = 'none';
+    }
+  }
+
+  function toggleCaptainMode() {
+    captainMode = !captainMode;
+    localStorage.setItem('3flop_captain', captainMode ? '1' : '0');
+    updateCaptainUI();
+    // If stats overlay is open, refresh to show correct mode's data
+    if (document.getElementById('statsOverlay').classList.contains('open')) {
+      renderStats();
+    }
+    // Refresh score pills to show current mode's scores
+    renderScores();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // TOPBAR BUTTONS
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  document.getElementById('btnCaptain').onclick = () => toggleCaptainMode();
   document.getElementById('btnReset').onclick = () => actionReset();
   document.getElementById('btnStats').onclick = () => openStats();
   document.getElementById('btnStatsBack').onclick = () => closeStats();
@@ -2091,6 +2258,7 @@
   // INITIAL RENDER
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  updateCaptainUI();
   render();
   </script>
 </body>
